@@ -1,12 +1,13 @@
-Microsoft Entra ID -- Enterprise SAML SSO & Identity Access Lab
 
-Hands-on Microsoft Entra ID lab implementing and troubleshooting SAML
-2.0 SSO with Microsoft Entra ID as the Identity Provider (IdP) and
-Microsoft Entra SAML Toolkit as the test Service Provider (SP).
+
+
+Microsoft Entra ID – Enterprise SAML SSO & Identity Access Lab
+Hands-on Microsoft Entra ID lab implementing and troubleshooting SAML 2.0 Single Sign-On (SSO) with Microsoft Entra ID as the Identity Provider (IdP) and Microsoft Entra SAML Toolkit as the Service Provider (SP).
+
+The goal was not only to make SSO work, but to understand the complete authentication and authorization flow and troubleshoot realistic identity-access failures.
 
 Objectives
-
-Configure cloud users and security groups
+Configure cloud users and security groups in Microsoft Entra ID
 
 Configure an Entra Enterprise Application
 
@@ -14,7 +15,7 @@ Implement group-based application access
 
 Configure SAML 2.0 SSO
 
-Understand IdP vs SP
+Understand the Identity Provider (IdP) and Service Provider (SP) relationship
 
 Configure Entity ID, Sign-on URL, and ACS/Reply URL
 
@@ -24,470 +25,594 @@ Configure SAML signing certificate trust
 
 Test SP-initiated SSO
 
-Review MFA / Conditional Access and sign-in logs
+Validate MFA / Conditional Access behavior
 
-Troubleshoot authorization, provisioning, NameID, and ACS failures
+Review Microsoft Entra sign-in logs
 
-Understand SCIM and JIT provisioning concepts
+Troubleshoot authorization, user-matching, NameID, and Reply URL failures
+
+Understand how SAML authentication differs from application provisioning
+
+Understand SCIM and Just-In-Time (JIT) provisioning concepts
 
 Architecture
-
 User
   |
   v
-Service Provider
+Service Provider (Microsoft Entra SAML Toolkit)
   |
-  | Redirect
+  | SP-initiated SAML authentication request
   v
-Microsoft Entra ID
+Microsoft Entra ID (Identity Provider)
   |
-  | Authentication + MFA
-  | App authorization
+  | Authentication + MFA / Conditional Access
+  |
+  | Authorization check (Enterprise App assignment)
+  |
+  | Signed SAML assertion
   v
-Signed SAML Assertion
+ACS / Reply URL on Service Provider
   |
-  | POST
-  v
-ACS / Reply URL
-  |
+  | Validate assertion + identify user
   v
 Application Session
+A successful Microsoft Entra authentication does not automatically mean the user receives application access.
+
+The flow involves multiple layers:
+
+Authentication – Entra verifies who the user is.
+
+Conditional Access / MFA – Entra evaluates authentication requirements.
+
+Enterprise Application authorization – Entra verifies whether the user or their group is allowed to use the application.
+
+SAML assertion – Entra creates and signs an assertion containing identity claims.
+
+Service Provider validation – The application validates the assertion.
+
+Application account matching/provisioning – The application must know how to map the federated identity to an application account.
+
+Application session – The application finally grants access.
 
 1. Identity and Group Foundation
+Cloud users and security groups were created in Microsoft Entra ID.
 
-Cloud-only users and security groups were created in Microsoft Entra ID.
-Groups included department and application-access groups such as
-SG-Sales, SG-IT, SG-HR, SG-Finance, SG-SaaS-App-Users, and
-SG-VDI-Users.
+Example application-access groups included:
 
-The scalable access model was:
+SG-Sales
 
-User -> Security Group -> Enterprise Application -> Access
+SG-IT
+
+SG-HR
+
+SG-Finance
+
+SG-SaaS-App-Users
+
+SG-VDI-Users
+
+Instead of assigning large numbers of individual users directly to applications, access can be managed through groups.
+
+User
+  ↓
+Security Group
+  ↓
+Enterprise Application Assignment
+  ↓
+Application Access
+This creates a more scalable access-management model.
 
 2. Enterprise Application
+The Microsoft Entra SAML Toolkit Enterprise Application was added to the tenant.
 
-The Microsoft Entra SAML Toolkit was added as an Enterprise Application.
+Microsoft Entra ID acted as the:
 
+Identity Provider (IdP)
 
+The SAML Toolkit acted as the:
 
-Application access was assigned through security groups.
+Service Provider (SP)
 
+The Enterprise Application became the Entra-side representation of the SaaS application.
 
+3. SAML 2.0 Configuration
+SAML-based Single Sign-On was configured between Microsoft Entra ID and the SAML Toolkit.
 
-Assignment required = Yes was used so authentication alone did not
-automatically authorize application access.
+Important SAML endpoints and identifiers included:
 
-3. Basic SAML Configuration
-
-
-
-Important values:
-
-Entity ID / Identifier -- uniquely identifies the Service
-Provider.
-
-Sign-on URL -- where the SP-initiated login begins.
-
-Reply URL / ACS -- where Entra sends the SAML response after
-authentication.
-
-The Service Provider Entity ID used was:
+Entity ID
+The Entity ID identifies the Service Provider to Microsoft Entra ID.
 
 https://samltoolkit.azurewebsites.net
+Sign-on URL
+The Sign-on URL is used to begin the Service Provider initiated authentication flow.
 
-The ACS endpoint used in this lab was:
+Assertion Consumer Service (ACS) / Reply URL
+The ACS endpoint is where Microsoft Entra ID sends the SAML response after authentication.
 
-https://samltoolkit.azurewebsites.net/SAML/Consume/22412
+Example structure:
 
-4. Attributes, Claims, and NameID
+https://samltoolkit.azurewebsites.net/SAML/Consume/<ID>
+This endpoint must match the Reply URL configured in the Enterprise Application.
 
+4. Identity Provider Configuration
+The Service Provider was configured with Microsoft Entra identity-provider information, including:
 
+Microsoft Entra Login URL
 
-The important NameID configuration was:
+Microsoft Entra Identifier
 
-Name identifier format: Email address
-Source: Attribute
-Source attribute: user.userprincipalname
+Logout URL
 
-Example:
+SAML signing certificate
 
-NameID = hamdan@basitcloudlab.com
+This establishes trust between the application and Microsoft Entra ID.
 
-The Service Provider uses NameID to map the federated Entra identity to
-its application-side identity.
+Conceptually:
 
+Service Provider trusts
+        ↓
+Microsoft Entra ID
+        ↓
+because the SAML assertion is digitally signed
 5. SAML Signing Certificate
+Microsoft Entra ID signs the SAML assertion using its SAML signing certificate.
 
+The Service Provider uses the corresponding certificate information to verify that:
 
+The assertion was issued by the trusted Identity Provider
 
-Entra creates and digitally signs the SAML assertion. The Service
-Provider uses the trusted Entra certificate/public key to verify the
-signature.
+The assertion was not modified after being issued
 
-Entra -> Signed Assertion -> Service Provider -> Signature Validation
+This prevents an attacker from simply creating a fake SAML assertion claiming to be another user.
 
-6. Entra SAML Endpoints
+6. NameID and Claims
+The required NameID claim was configured using:
 
+user.userprincipalname
+with the Name identifier format:
 
+Email address
+The SAML assertion also included identity attributes such as:
 
-Login URL = where the application sends the user for Entra
-authentication.
+Email address
 
-Entra Identifier = identity of the Entra IdP/issuer.
+Given name
 
-Logout URL = endpoint used as part of SAML logout.
+Surname
 
-7. Service Provider Configuration
+User principal name
 
+Conceptually:
 
-
-The Service Provider was configured with the Entra Login URL, Entra
-Identifier, Logout URL, and signing certificate. Entra was configured
-with the SP Entity ID and ACS/Reply URL.
-
-Entra ID (IdP) <------ SAML Trust ------> SAML Toolkit (SP)
-
-8. Successful SP-Initiated SSO
-
-
-
-End-to-end flow:
-
-Hamdan
-  |
-  v
-SP Initiated Login
-  |
-  v
-Redirect to Entra
-  |
-  v
-Authentication + MFA
-  |
-  v
-Enterprise App Authorization
-  |
-  v
+Microsoft Entra User
+        ↓
+Claims generated
+        ↓
 Signed SAML Assertion
-  |
-  v
-ACS / Reply URL
-  |
-  v
-Validate Signature + Issuer + NameID
-  |
-  v
-Application Session
-  |
-  v
-ACCESS GRANTED
+        ↓
+Service Provider
+        ↓
+Application maps NameID to a user
+The NameID is particularly important because the Service Provider can use it to determine which application account the authenticated identity belongs to.
 
-The user's Entra password is not sent to the Service Provider. The
-application trusts the signed assertion issued by Entra.
+7. Group-Based Application Access
+The Enterprise Application was configured so access could be granted through security-group membership.
 
-9. Group-Based Authorization
+Instead of:
 
+User → Application
+User → Application
+User → Application
+User → Application
+the scalable model is:
 
+Users
+  ↓
+Security Group
+  ↓
+Enterprise Application
+For example:
 
-Example:
+Sara
+  ↓
+SG-Sales
+  ↓
+Microsoft Entra SAML Toolkit
+Adding Sara to the authorized group allowed Entra to authorize her for the Enterprise Application.
 
-Hamdan -> SG-Sales -> Enterprise Application -> Authorized
-
-This demonstrated the difference between:
-
-Authentication: Is this really Hamdan?
-
-Authorization: Is Hamdan allowed to use this application?
-
-10. Sign-In Logs
-
-
-
-
-
-Entra sign-in logs were used to inspect user, application, status,
-authentication requirement, Conditional Access, failure reason, error
-code, Request ID, and Correlation ID.
-
-A major lesson was that Entra Success does not always mean the SaaS
-application successfully established a session. If Entra succeeds but
-the application fails afterward, troubleshooting continues on the
-Service Provider side.
-
-Authentication vs Authorization vs Provisioning
+This demonstrated the distinction between:
 
 Authentication
 
-User -> Entra ID -> Password/MFA -> Identity Verified
+Is this really Sara?
+
+and:
 
 Authorization
 
-User -> Security Group -> Enterprise App Assignment -> Access Allowed
+Is Sara allowed to access this application?
 
-Provisioning
+8. SP-Initiated SSO Flow
+The lab tested Service Provider initiated SSO.
 
-Provisioning answers whether the user actually exists inside the SaaS
-application.
+The complete flow was:
 
-During this lab, the SAML Toolkit required a matching local application
-identity.
+1. User opens the Service Provider login URL
+                     ↓
+2. Service Provider redirects the browser to Microsoft Entra ID
+                     ↓
+3. Entra identifies the user
+                     ↓
+4. User authenticates
+                     ↓
+5. MFA / Conditional Access is evaluated
+                     ↓
+6. Entra checks Enterprise Application assignment
+                     ↓
+7. Entra creates a signed SAML assertion
+                     ↓
+8. Browser POSTs the SAML response to the ACS / Reply URL
+                     ↓
+9. Service Provider validates the assertion
+                     ↓
+10. Service Provider maps the NameID to an application user
+                     ↓
+11. Application session is created
+9. Successful SSO Validation
+Successful SSO was tested with authorized users.
 
-Entra identity: iqra@basitcloudlab.com
-                     |
-                     v
-Application identity: iqra@basitcloudlab.com
+The browser was redirected through Microsoft Entra authentication and returned to the SAML Toolkit.
 
-This demonstrated that SAML authentication and SaaS user provisioning
-are separate processes.
+Microsoft Entra sign-in logs showed successful authentication events for the Enterprise Application.
 
-Real-World SCIM / JIT
+This verified that:
 
-A production SaaS platform may use SCIM:
+SP → Entra → Authentication → Authorization
+   → Signed Assertion → ACS → Application
+was functioning correctly.
 
-Microsoft Entra ID
-    |          |
-   SCIM       SAML
-    |          |
-Provision   Authenticate
-    |          |
-    +---- SaaS App
+Troubleshooting Scenarios
+A major part of the lab involved intentionally breaking the SAML environment and troubleshooting the resulting failures.
 
-SCIM can create, update, and deprovision supported SaaS identities
-automatically.
-
-Some applications instead support Just-In-Time (JIT) provisioning,
-where the first successful SAML login creates the application account
-automatically.
-
-Troubleshooting Performed
-
-Ticket 1 -- AADSTS50105: User Not Assigned
-
-Symptom: Iqra authenticated to Entra but was denied application
-access.
-
-Finding: The account was valid, but her security group was not
-assigned to the Enterprise Application.
-
-Authentication = Successful
-Authorization  = Failed
-
-Error:
+Ticket 1 – User Not Assigned to Enterprise Application
+Problem
+A user attempted to access the SAML application but received:
 
 AADSTS50105
+Microsoft Entra reported that the administrator had configured the application to block users unless they were explicitly granted access.
 
-Resolution: Assigned SG-IT to the Enterprise Application and
-retested.
+Investigation
+The Enterprise Application sign-in logs were reviewed.
 
-Lesson: A valid Entra identity does not automatically provide
-authorization to every Enterprise Application.
+The user successfully reached Microsoft Entra ID, but Entra rejected application access because the user was not directly assigned and was not a member of an authorized group.
 
-Ticket 2 -- SaaS User Was Not Provisioned
+Root Cause
+The user was authenticated but not authorized for the Enterprise Application.
 
-After fixing Entra authorization, Iqra's Entra sign-in succeeded and the
-SAML response reached the application, but the test Service Provider
-still failed.
+Resolution
+The appropriate security group was assigned to the Enterprise Application and the user was added to that group.
 
-Entra Authentication       = SUCCESS
-Enterprise App Authorization = SUCCESS
-SAML Assertion             = SUCCESS
-Application User Mapping   = FAILURE
+Lesson
+Successful authentication ≠ application authorization
+A valid username, password, and MFA response do not automatically grant access to an Enterprise Application.
 
-Root cause: The test SAML Toolkit required a matching local account
-for iqra@basitcloudlab.com.
+Ticket 2 – User Added to Authorized Group
+Problem
+A user who needed access was missing from the application-access group.
 
-Resolution: Created the matching application-side identity and
-successfully tested SSO.
+Investigation
+The following relationship was checked:
 
-Lesson: SAML SSO does not automatically provision SaaS accounts.
-Production applications may use SCIM, JIT, or another provisioning
-workflow.
+User
+  ↓
+Group Membership
+  ↓
+Enterprise Application Assignment
+The Enterprise Application already allowed the Sales security group, but the user was not a member.
 
-Ticket 3 -- Incorrect NameID Mapping
+Resolution
+The user was added to the appropriate security group.
 
-The working NameID was deliberately changed from:
+After the membership change, Entra allowed the SAML authentication flow to continue.
 
-user.userprincipalname
+Lesson
+Group-based application assignment allows administrators to manage access without individually assigning every employee to every application.
 
-to:
+Ticket 3 – Entra Authentication Succeeds but Application Still Fails
+Problem
+The user successfully authenticated with Microsoft Entra ID and was authorized for the Enterprise Application, but the SAML Toolkit still failed to create an application session.
 
-user.displayname
+Investigation
+The SAML assertion was successfully generated and sent to the Service Provider.
 
-Instead of receiving an email-style identity such as:
+This proved that Entra authentication and authorization were working.
 
-hamdan@basitcloudlab.com
+The issue occurred after the assertion reached the application.
 
-the Service Provider received an identity similar to:
+Root Cause
+The SAML Toolkit is a test application that requires a matching local user account.
 
-Hamdan Malik
+The Service Provider could not map the incoming NameID to an existing local application user.
 
-Result: Entra authentication could succeed while the Service
-Provider could not correctly map the user.
+Resolution
+A matching local user was created in the SAML Toolkit.
 
-Resolution: Restored:
+SSO then succeeded.
+
+Real-World Lesson
+This highlighted the difference between:
+
+Federated Authentication
+        vs
+User Provisioning
+Real SaaS applications commonly solve this with:
+
+SCIM provisioning
+
+Just-In-Time (JIT) provisioning
+
+Automated account creation
+
+Identity lifecycle integrations
+
+With SCIM, a typical flow might be:
+
+HR / Identity Source
+        ↓
+Microsoft Entra ID
+        ↓
+SCIM Provisioning
+        ↓
+SaaS Application User Created
+        ↓
+SAML SSO
+Therefore, organizations with thousands of users normally do not manually create every SaaS account.
+
+Ticket 4 – NameID / Claim Mismatch
+Problem
+Authentication reached the Service Provider, but the application could not correctly process the SAML identity.
+
+Investigation
+The Attributes & Claims configuration was reviewed.
+
+The Service Provider expected the NameID in email-address format.
+
+The required claim was configured as:
 
 Name identifier format: Email address
 Source attribute: user.userprincipalname
+Root Cause
+A mismatch between what the Service Provider expected and what Microsoft Entra ID sent prevented proper user mapping.
 
-Lesson: The claims Entra sends must match the identity format
-expected by the Service Provider.
+Resolution
+The NameID configuration was restored to the expected format and source attribute.
 
-Ticket 4 -- AADSTS50011: Reply URL / ACS Mismatch
+Lesson
+The Identity Provider and Service Provider must agree on the identity format.
 
-The registered Reply URL was deliberately changed.
+Entra sends NameID
+        ↓
+Service Provider reads NameID
+        ↓
+SP maps NameID to application identity
+If those values do not align, authentication can succeed at the IdP while application login still fails.
 
-The Service Provider requested its legitimate ACS URL, but the URL no
-longer matched the Reply URL registered in Entra.
-
-Error:
+Ticket 5 – Incorrect ACS / Reply URL
+Problem
+The authentication attempt failed with:
 
 AADSTS50011
+Microsoft Entra reported that the Reply URL specified in the request did not match the Reply URLs configured for the application.
 
-Entra stopped the flow rather than sending a SAML response to an
-unregistered destination.
+Investigation
+The ACS URL generated by the Service Provider was compared with the Reply URL configured in Microsoft Entra ID.
 
-Resolution: Restored:
+The values did not match.
 
-https://samltoolkit.azurewebsites.net/SAML/Consume/22412
+Root Cause
+The SAML response was configured to return to an incorrect endpoint.
 
-SSO was successfully retested.
+Conceptually:
 
-Lesson: Reply URL validation is an important SAML security control.
+Entra
+  |
+  | SAML Response
+  v
+Wrong Reply URL ✗
+The Service Provider expects the SAML response at its specific ACS endpoint.
 
-Troubleshooting Workflow
+Resolution
+The correct ACS URL was restored in the Enterprise Application's SAML configuration.
 
-1. Identify affected user
-   |
-2. Verify account status
-   |
-3. Verify group membership
-   |
-4. Verify Enterprise App assignment
-   |
-5. Check Entra sign-in logs
-   |
-6. Review error code / failure reason
-   |
-7. Review Conditional Access
-   |
-8. Check SAML claims / NameID
-   |
-9. Check Entity ID / ACS / Reply URL
-   |
-10. Determine failure layer:
-    Authentication / Authorization /
-    Provisioning / Service Provider
+Entra
+  |
+  | Signed SAML Response
+  v
+Correct ACS / Reply URL
+  |
+  v
+Service Provider ✓
+SSO worked again after correcting the URL.
 
-Key Lessons
+Lesson
+The Reply URL is not simply the application's homepage.
 
-SAML allows a Service Provider to delegate authentication to
-Microsoft Entra ID.
+It is the specific endpoint where the Service Provider is waiting to receive and process the SAML response.
 
-Entra credentials are not handed directly to the SaaS application.
+Sign-In Log Investigation
+Microsoft Entra sign-in logs were used throughout the troubleshooting process.
 
-Entra digitally signs SAML assertions.
+The logs helped identify:
 
-The Service Provider validates the signature using the trusted Entra
-certificate.
+Successful authentication
 
-NameID and claims must match what the Service Provider expects.
+Failed authentication
 
-Authentication and authorization are separate.
+Enterprise Application authorization failures
 
-Group-based assignments scale better than individual assignments.
+Conditional Access results
 
-A successful Entra sign-in does not guarantee application-side
-success.
+User principal name
 
-SaaS provisioning is separate from SAML authentication.
+Application involved
 
-SCIM/JIT can automate SaaS account creation when supported.
+Error codes
 
-Sign-in logs and error codes are essential for SSO troubleshooting.
+Failure reasons
 
-ACS/Reply URL validation protects the SAML response destination.
+Request IDs
 
-Technologies / Concepts
+Correlation IDs
 
+This demonstrated why Entra sign-in logs are one of the first places an administrator should investigate when troubleshooting SSO.
+
+Important Concepts Learned
+Identity Provider vs Service Provider
+Microsoft Entra ID = Identity Provider (IdP)
+
+SaaS Application = Service Provider (SP)
+The IdP authenticates the identity.
+
+The SP provides the application or service.
+
+Authentication vs Authorization
+Authentication
+"Who are you?"
+
+        ↓
+
+Authorization
+"Are you allowed to use this application?"
+A user can successfully authenticate and still be denied access.
+
+Authorization vs Provisioning
+Even authorization does not guarantee that an application has an account for the user.
+
+Authentication
+      ↓
+Authorization
+      ↓
+Provisioning / Account Mapping
+      ↓
+Application Access
+These are separate identity-management functions.
+
+SAML vs SCIM
+SAML handles federated authentication.
+
+User → Entra ID → SAML Assertion → SaaS Application
+SCIM handles user lifecycle provisioning.
+
+Entra ID → Create / Update / Disable User → SaaS Application
+In a production environment, the two technologies can work together:
+
+SCIM = make sure the account exists
+SAML = authenticate the account
+Troubleshooting Methodology
+The lab reinforced a useful troubleshooting sequence:
+
+1. Can the user authenticate?
+        ↓
+2. Did MFA / Conditional Access succeed?
+        ↓
+3. Is the user/group assigned to the Enterprise Application?
+        ↓
+4. Is the SAML configuration correct?
+        ↓
+5. Is the NameID / claim format correct?
+        ↓
+6. Is the Reply URL / ACS endpoint correct?
+        ↓
+7. Did Entra issue the assertion?
+        ↓
+8. Did the Service Provider accept it?
+        ↓
+9. Does the application have/match the user account?
+This avoids treating every SSO problem as a password problem.
+
+Screenshots
+Screenshots collected during the lab can be stored in:
+
+screenshots/
+Recommended repository structure:
+
+.
+├── README.md
+└── screenshots/
+    ├── 01-entra-users-and-groups.png
+    ├── 02-enterprise-application.png
+    ├── 03-users-and-groups-assignment.png
+    ├── 04-saml-basic-configuration.png
+    ├── 05-saml-idp-configuration.png
+    ├── 06-attributes-and-claims.png
+    ├── 07-nameid-configuration.png
+    ├── 08-saml-signing-certificate.png
+    ├── 09-saml-toolkit-configuration.png
+    ├── 10-successful-sso.png
+    ├── 11-entra-signin-logs.png
+    └── 12-signin-log-details.png
+Example Markdown for embedding screenshots:
+
+![SAML Configuration](screenshots/04-saml-basic-configuration.png)
+Skills Practiced
 Microsoft Entra ID
 
 Enterprise Applications
 
 SAML 2.0
 
-Microsoft Entra SAML Toolkit
+Single Sign-On (SSO)
 
-Entra Security Groups
+Identity Provider / Service Provider architecture
 
-Group-Based Application Assignment
+Security groups
+
+Group-based application assignment
 
 MFA
 
-Conditional Access
+Conditional Access validation
 
-SAML Claims
+SAML claims
 
 NameID
 
-SAML Signing Certificates
+SAML signing certificates
 
-SP-Initiated SSO
+ACS / Reply URLs
 
-Entra Sign-In Logs
+Microsoft Entra sign-in logs
 
-Authentication / Authorization / Provisioning
+Identity troubleshooting
 
-SCIM concepts
+SaaS application authorization
 
-JIT provisioning concepts
+SAML vs SCIM provisioning concepts
 
-Screenshot Files
+Final Takeaway
+The biggest lesson from this lab was that enterprise SSO is more than entering a username and password.
 
-Place the screenshots in /screenshots/:
+A working application login can depend on the entire chain:
 
-01-enterprise-application-overview.png
+Identity
+   ↓
+Authentication
+   ↓
+MFA / Conditional Access
+   ↓
+Enterprise Application Authorization
+   ↓
+SAML Claims
+   ↓
+Signed Assertion
+   ↓
+Correct ACS Endpoint
+   ↓
+Application User Mapping / Provisioning
+   ↓
+Application Session
+Breaking individual parts of this chain and troubleshooting the resulting errors made the SAML authentication process much clearer than simply configuring a working SSO connection.
 
-02-users-groups-assignment.png
-
-03-basic-saml-configuration.png
-
-04-saml-attributes-claims.png
-
-05-saml-signing-certificate.png
-
-06-entra-saml-endpoints.png
-
-07-service-provider-saml-configuration.png
-
-08-successful-sso-hamdan.png
-
-09-group-based-sso-access.png
-
-10-successful-sso-signin-log.png
-
-11-sso-signin-activity-details.png
-
-Future Extension
-
-The next identity-focused extension can use a SCIM-capable application
-to demonstrate:
-
-Create Entra User
-      |
-Assign Security Group
-      |
-SCIM Provisions SaaS User
-      |
-SAML SSO
-      |
-Remove Assignment / Disable User
-      |
-SCIM Deprovisions SaaS User
-
-Author
-
-Syed Aftab
-
-Hands-on cloud and infrastructure learning project focused on Microsoft
-Azure, Microsoft Entra ID, enterprise identity, and cloud
-administration.
+Technologies
+Microsoft Entra ID | Enterprise Applications | SAML 2.0 | SSO | MFA | Conditional Access | Security Groups | Identity & Access Management | SCIM Concepts
